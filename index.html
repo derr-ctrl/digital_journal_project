@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Realistic Digital Journal Book</title>
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700&family=Playfair+Display:wght@700&family=Indie+Flower&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="vignette"></div>
+  <div class="book-bg">
+    <div class="book-container">
+      <div class="book-shadow"></div>
+      <div class="book" id="journal-book">
+        <div class="book-spine"></div>
+        <div class="book-gutter"></div>
+
+        <div class="book-page left-page" id="left-page" data-index="0">
+          <div class="page-content-wrapper" contenteditable="true" spellcheck="false" data-placeholder="Start writing on your left page..."></div>
+          </div>
+
+        <div class="book-page right-page" id="right-page" data-index="1">
+          <div class="page-content-wrapper" contenteditable="true" spellcheck="false" data-placeholder="Start writing on your right page..."></div>
+          </div>
+
+        <div class="book-cover" id="book-cover">
+          <div class="cover-title-group">
+            <p class="cover-author">Mark Bansagales</p>
+            <p class="cover-section">B194</p>
+          </div>
+          <div class="open-indicator">Click to Open</div>
+        </div>
+
+        <div class="book-indicator" id="page-indicator"></div>
+      </div>
+    </div>
+  </div>
+  <audio id="page-flip-sound" src="https://cdn.pixabay.com/audio/2022/07/26/audio_124bfae3b2.mp3" preload="auto"></audio>
+  <script src="script.js"></script>
+</body>
+</html>

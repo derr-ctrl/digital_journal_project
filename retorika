@@ -1,0 +1,837 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Realistic Digital Journal Book</title>
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700&family=Playfair+Display:wght@700&family=Indie+Flower&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="vignette"></div>
+  <div class="book-bg">
+    <div class="book-container">
+      <div class="book-shadow"></div>
+      <div class="book" id="journal-book">
+        <div class="book-spine"></div>
+        <div class="book-gutter"></div>
+
+        <div class="book-page left-page" id="left-page" data-index="0">
+          <div class="page-content-wrapper" contenteditable="true" spellcheck="false" data-placeholder="Start writing on your left page..."></div>
+          </div>
+
+        <div class="book-page right-page" id="right-page" data-index="1">
+          <div class="page-content-wrapper" contenteditable="true" spellcheck="false" data-placeholder="Start writing on your right page..."></div>
+          </div>
+
+        <div class="book-cover" id="book-cover">
+          <div class="cover-title-group">
+            <p class="cover-author">Mark Bansagales</p>
+            <p class="cover-section">B194</p>
+          </div>
+          <div class="open-indicator">Click to Open</div>
+        </div>
+
+        <div class="book-indicator" id="page-indicator"></div>
+      </div>
+    </div>
+  </div>
+  <audio id="page-flip-sound" src="https://cdn.pixabay.com/audio/2022/07/26/audio_124bfae3b2.mp3" preload="auto"></audio>
+  <script src="script.js"></script>
+</body>
+</html>document.addEventListener('DOMContentLoaded', () => {
+    const journalBook = document.getElementById('journal-book');
+    const bookCover = document.getElementById('book-cover');
+    const leftPage = document.getElementById('left-page');
+    const rightPage = document.getElementById('right-page');
+    const pageIndicator = document.getElementById('page-indicator');
+    const flipSound = document.getElementById('page-flip-sound');
+
+    // Get references to the content wrappers (already in HTML)
+    const leftPageContent = leftPage.querySelector('.page-content-wrapper');
+    const rightPageContent = rightPage.querySelector('.page-content-wrapper');
+
+    // Define default content for each spread.
+    const defaultPagesContent = [
+        [
+            `<h1>My Journal</h1>
+             <p>Welcome to your digital journal! Click the right edge of the page to turn.</p>`,
+            `<h2>Today's Reflection</h2>
+             <p>You can add more content, images, or lists here.</p>
+             <ul>
+               <li>Gratitude</li>
+               <li>Memories</li>
+               <li>Plans</li>
+             </ul>`
+        ],
+        [
+            `<h2>Memories</h2>
+             <p>Describe a memorable event here.</p>`,
+            `<h2>Photo</h2>
+             <img src="https://images.unsplash.com/photo-1506744038136-46273834b3fb?auto=format&fit=crop&w=400&q=80" alt="Sample" style="max-width:100%;border-radius:8px;box-shadow:0 2px 8px #ccc;">
+             <br><small style="color:#bfa046;">(You can add images too!)</small>`
+        ],
+        [
+            `<h2>Reflections</h2>
+             <p>What did you learn today?</p>`,
+            `<h2>Gratitude</h2>
+             <p>Write something you're grateful for.</p>`
+        ],
+        [
+            `<h2>Blank Page</h2>
+             <p>This page is empty. Start typing!</p>`,
+            `<h2>Blank Page</h2>
+             <p>This page is empty. Start typing!</p>`
+        ]
+    ];
+
+    let currentSpread = 0;
+    const totalSpreads = defaultPagesContent.length;
+    const totalPhysicalPages = totalSpreads * 2;
+
+    let isFlipping = false;
+    let isBookOpen = false;
+
+    // --- Dynamic Click Zone Creation and Setup ---
+    let nextPageZone, prevPageZone;
+
+    function createAndSetupClickZones() {
+        // Create element for the zone on the LEFT page (JS gives it 'next-page-zone' class)
+        nextPageZone = document.createElement('div');
+        nextPageZone.classList.add('page-click-zone', 'next-page-zone');
+        leftPage.appendChild(nextPageZone);
+
+        // Create element for the zone on the RIGHT page (JS gives it 'prev-page-zone' class)
+        prevPageZone = document.createElement('div');
+        prevPageZone.classList.add('page-click-zone', 'prev-page-zone');
+        rightPage.appendChild(prevPageZone);
+
+        // Attach event listeners to the dynamically created zones
+        nextPageZone.addEventListener('click', () => {
+            // Only allow flip if book is open, not currently flipping, and not on the last spread
+            if (isBookOpen && !isFlipping && currentSpread < totalSpreads - 1) {
+                flipPage("next");
+            }
+        });
+
+        prevPageZone.addEventListener('click', () => {
+            // Only allow flip if book is open, not currently flipping, and not on the first spread
+            if (isBookOpen && !isFlipping && currentSpread > 0) {
+                flipPage("prev");
+            }
+        });
+
+        // Initial state: hide zones until book is open using the 'hidden' class
+        nextPageZone.classList.add('hidden');
+        prevPageZone.classList.add('hidden');
+    }
+
+    // Call this function once when DOM is ready
+    createAndSetupClickZones();
+
+    // --- Local Storage Functions ---
+    function getPageContent(spreadIndex, side) {
+        const key = `journal_spread_${spreadIndex}_${side}`;
+        const savedContent = localStorage.getItem(key);
+        return savedContent !== null ? savedContent : defaultPagesContent[spreadIndex][side === 'left' ? 0 : 1];
+    }
+
+    function savePageContent(spreadIndex, side, content) {
+        const key = `journal_spread_${spreadIndex}_${side}`;
+        localStorage.setItem(key, content);
+    }
+
+    // --- Render Function ---
+    function renderBook() {
+        leftPageContent.innerHTML = getPageContent(currentSpread, 'left');
+        rightPageContent.innerHTML = getPageContent(currentSpread, 'right');
+
+        // Set placeholders (if contenteditable is not empty, placeholder won't show)
+        // These are already in HTML, but setting them here ensures consistency.
+        leftPageContent.setAttribute('data-placeholder', 'Start writing on your left page...');
+        rightPageContent.setAttribute('data-placeholder', 'Start writing on your right page...');
+
+        const leftPageNum = (currentSpread * 2) + 1;
+        const rightPageNum = (currentSpread * 2) + 2;
+        pageIndicator.textContent = `Pages ${leftPageNum} - ${rightPageNum} of ${totalPhysicalPages}`;
+
+        // Manage click zone visibility (using classes for transitions)
+        if (isBookOpen) {
+            // Next button (on left page)
+            if (currentSpread < totalSpreads - 1) {
+                nextPageZone.classList.remove('hidden');
+            } else {
+                nextPageZone.classList.add('hidden');
+            }
+
+            // Previous button (on right page)
+            if (currentSpread > 0) {
+                prevPageZone.classList.remove('hidden');
+            } else {
+                prevPageZone.classList.add('hidden');
+            }
+        } else {
+            // If book is not open, hide all zones
+            nextPageZone.classList.add('hidden');
+            prevPageZone.classList.add('hidden');
+        }
+    }
+
+    // --- Page Flip Animation ---
+    const FLIP_ANIMATION_DURATION = 600; // Matches CSS transition duration for .book-page.flipping
+
+    function flipPage(direction) {
+        if (!isBookOpen || isFlipping) return;
+        isFlipping = true;
+
+        // Temporarily disable pointer-events immediately to prevent rapid clicks during flip
+        nextPageZone.style.pointerEvents = 'none';
+        prevPageZone.style.pointerEvents = 'none';
+
+        if (flipSound) {
+            flipSound.currentTime = 0;
+            flipSound.play();
+        }
+
+        if (direction === "next") {
+            // When going next, the current left page flips to the left
+            leftPage.classList.add("flipping-left");
+        } else { // direction === "prev"
+            // When going previous, the current right page flips to the right
+            rightPage.classList.add("flipping-right");
+        }
+
+        // Timeout to update content after the visual flip animation starts (mid-flip)
+        setTimeout(() => {
+            if (direction === "next" && currentSpread < totalSpreads - 1) {
+                currentSpread++;
+            } else if (direction === "prev" && currentSpread > 0) {
+                currentSpread--;
+            }
+            renderBook(); // Update content for the new spread immediately after changing currentSpread
+        }, FLIP_ANIMATION_DURATION / 2); // Update content roughly halfway through the flip
+
+        // Timeout to remove flipping classes and re-enable pointer-events after animation completes
+        setTimeout(() => {
+            // Remove flipping classes from both pages, regardless of which one "flipped" visually
+            leftPage.classList.remove("flipping-left", "flipping-right");
+            rightPage.classList.remove("flipping-left", "flipping-right");
+            isFlipping = false;
+
+            // Re-enable pointer events based on current page after flip is done
+            // This is handled by renderBook, but explicitly setting 'auto' here just in case,
+            // though the class-based visibility will take precedence.
+            nextPageZone.style.pointerEvents = '';
+            prevPageZone.style.pointerEvents = '';
+            renderBook(); // Re-render to ensure buttons are correctly enabled/disabled for the new spread
+        }, FLIP_ANIMATION_DURATION); // Ensure this matches or slightly exceeds the CSS transition for the flip
+    }
+
+    // --- Event Listeners ---
+
+    // Toggle book open/close on cover click
+    bookCover.addEventListener('click', () => {
+        if (!isBookOpen) {
+            // Opening the book
+            bookCover.classList.add('open');
+            journalBook.classList.add('opened'); // Adds this class to the book
+
+            if (flipSound) {
+                flipSound.currentTime = 0;
+                flipSound.play();
+            }
+
+            // Ensure page indicator becomes visible when book is opened
+            pageIndicator.classList.add('visible');
+
+            setTimeout(() => {
+                isBookOpen = true;
+                renderBook(); // Display initial or saved content and enable zones
+            }, 1000); // Matches cover open transition duration in CSS
+        } else {
+            // Closing the book
+            bookCover.classList.remove('open');
+            journalBook.classList.remove('opened'); // Removes this class from the book
+
+            if (flipSound) {
+                flipSound.currentTime = 0;
+                flipSound.play();
+            }
+
+            // Immediately hide all click zones and page indicator when book is closing
+            nextPageZone.classList.add('hidden');
+            prevPageZone.classList.add('hidden');
+            pageIndicator.classList.remove('visible');
+
+            setTimeout(() => {
+                isBookOpen = false;
+            }, 1000); // Matches cover close transition
+        }
+    });
+
+    // Save content on input
+    leftPageContent.addEventListener('input', () => {
+        savePageContent(currentSpread, 'left', leftPageContent.innerHTML);
+    });
+
+    rightPageContent.addEventListener('input', () => {
+        savePageContent(currentSpread, 'right', rightPageContent.innerHTML);
+    });
+
+    // Keyboard navigation (Left/Right arrow keys)
+    document.addEventListener('keydown', (event) => {
+        if (!isBookOpen) return; // Only allow keyboard navigation if book is open
+
+        if (event.key === 'ArrowRight') {
+            event.preventDefault(); // Prevent page scrolling
+            if (currentSpread < totalSpreads - 1) {
+                flipPage('next');
+            }
+        } else if (event.key === 'ArrowLeft') {
+            event.preventDefault(); // Prevent page scrolling
+            if (currentSpread > 0) {
+                flipPage('prev');
+            }
+        }
+    });
+
+
+    // Initial ren/* General Resets & Body Styles */
+html, body {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  font-family: "Montserrat", sans-serif;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+}
+body {
+  min-height: 100vh;
+  min-width: 100vw;
+  background: radial-gradient(ellipse at center, #e7dac7 60%, #bfa046 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+
+/* Vignette Effect */
+.vignette {
+  pointer-events: none;
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  background: radial-gradient(ellipse at center, rgba(0,0,0,0) 60%, rgba(0,0,0,0.15) 100%);
+}
+
+/* Book Container & Shadow */
+.book-bg {
+  min-height: 100vh;
+  width: 100vw;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.book-container {
+  position: relative;
+  width: 90vw;
+  max-width: 1100px;
+  height: 80vh;
+  min-height: 400px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1;
+}
+.book-shadow {
+  position: absolute;
+  left: 50%;
+  top: 70px;
+  width: 95vw;
+  max-width: 1200px;
+  height: 85vh;
+  min-height: 420px;
+  background: radial-gradient(ellipse at center, #bba046 0%, #0000 80%);
+  opacity: 0.25;
+  z-index: 0;
+  transform: translateX(-50%) rotateX(10deg);
+  filter: blur(20px);
+  transition: all 0.5s ease-out;
+}
+
+/* Main Book Element */
+.book {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  background: #e9e3d0;
+  border-radius: 24px;
+  box-shadow: 0 16px 64px 0 rgba(44, 62, 80, 0.18), 0 2px 0 #bfa046 inset;
+  display: flex;
+  flex-direction: row;
+  overflow: visible;
+  z-index: 1;
+  transition: box-shadow 0.3s;
+}
+
+/* Book Spine */
+.book-spine {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  width: 38px;
+  height: 100%;
+  background: linear-gradient(90deg, #bfa046 0%, #e0c68a 100%);
+  border-radius: 12px;
+  box-shadow:
+    0 0 32px #bfa04688,
+    0 0 0 4px #e0c68a inset,
+    0 0 15px rgba(0,0,0,0.2) inset;
+  z-index: 2;
+  transform: translateX(-50%);
+  border-left: 2px solid #bfa04699;
+  border-right: 2px solid #bfa04699;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.book-spine::before {
+  content: '';
+  display: block;
+  width: 6px;
+  height: 85%;
+  margin: 0 auto;
+  background: repeating-linear-gradient(
+    to bottom,
+    #bfa046 0%,
+    #bfa046 10px,
+    #e0c68a 10px,
+    #e0c68a 20px
+  );
+  border-radius: 3px;
+  opacity: 0.6;
+  box-shadow: 0 0 8px rgba(0,0,0,0.3) inset;
+}
+
+/* Book Gutter */
+.book-gutter {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  width: 8px;
+  height: 100%;
+  background: repeating-linear-gradient(
+    to bottom,
+    #e0c68a 0 2px,
+    #bfa046 2px 4px,
+    #e0c68a 4px 8px
+  );
+  opacity: 0.18;
+  z-index: 3;
+  transform: translateX(-50%);
+  border-radius: 4px;
+  pointer-events: none;
+}
+
+/* Book Pages */
+.book-page {
+  width: 50%;
+  height: 100%;
+  background:
+    url('https://www.transparenttextures.com/patterns/paper-fibers.png'),
+    repeating-linear-gradient(
+      to bottom,
+      #fdf6e3,
+      #fdf6e3 36px,
+      #f5e9d7 37px,
+      #fdf6e3 38px
+    );
+  box-shadow:
+    0 0 16px #bfa04622 inset,
+    0 2px 16px #fffdfa44 inset,
+    0 0 8px rgba(0,0,0,0.1) inset,
+    0 0 0 1px rgba(0,0,0,0.05) inset;
+  box-sizing: border-box;
+  position: relative; /* Crucial for absolute positioning of click zones */
+  z-index: 1;
+  font-family: "Indie Flower", cursive, "Montserrat", sans-serif;
+  transition: background 0.5s, box-shadow 0.3s, transform 0.6s cubic-bezier(.4,2,.6,1);
+  background-blend-mode: multiply;
+  border-radius: 0;
+  border: none;
+  animation: pageIn 0.5s;
+  will-change: transform, box-shadow;
+  outline: none;
+}
+
+/* Page Content Wrapper */
+.page-content-wrapper {
+    position: absolute; /* Take up entire space */
+    inset: 0; /* top, right, bottom, left 0 */
+    /* Adjusted bottom padding slightly more to ensure ample space for buttons */
+    padding: 4vw 3vw 12vw 3vw; /* Increased from 10vw to 12vw */
+    overflow-y: auto; /* Scrollable content */
+    font-size: 1.12em;
+    color: #2d3a4a;
+    cursor: text; /* Text cursor for editable area */
+    z-index: 1; /* Below click zones */
+    outline: none;
+}
+
+/* Custom scrollbar for content wrapper */
+.page-content-wrapper::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.page-content-wrapper::-webkit-scrollbar-thumb {
+  background-color: #bfa046;
+  border-radius: 10px;
+  border: 2px solid #f5e9d7;
+}
+.page-content-wrapper::-webkit-scrollbar-track {
+  background: #f5e9d7;
+  border-radius: 10px;
+}
+
+/* Placeholder style for contenteditable elements */
+.page-content-wrapper:empty:before {
+  content: attr(data-placeholder);
+  color: #a0a0a0;
+  pointer-events: none;
+  display: block;
+  margin-top: 1em;
+}
+
+@keyframes pageIn {
+  from { opacity: 0; transform: scale(0.98) translateY(20px);}
+  to { opacity: 1; transform: scale(1) translateY(0);}
+}
+
+.left-page {
+  border-top-left-radius: 24px;
+  border-bottom-left-radius: 24px;
+  border-right: 2px solid #e0c68a;
+  box-shadow: -12px 0 32px #bfa04611 inset, 1px 0 0 rgba(0,0,0,0.1),
+              -2px 0 0px 0 rgba(0,0,0,0.02) inset,
+              -4px 0 0px 0 rgba(0,0,0,0.01) inset;
+  margin-right: 2px;
+}
+.right-page {
+  border-top-right-radius: 24px;
+  border-bottom-right-radius: 24px;
+  border-left: 2px solid #e0c68a;
+  box-shadow: 12px 0 32px #bfa04611 inset, -1px 0 0 rgba(0,0,0,0.1),
+              2px 0 0px 0 rgba(0,0,0,0.02) inset,
+              4px 0 0px 0 rgba(0,0,0,0.01) inset;
+  margin-left: 2px;
+}
+
+/* Page Turn Buttons (Revised Professional Look) */
+.page-click-zone {
+  position: absolute;
+  width: 52px; /* Slightly larger for better touch target */
+  height: 52px; /* Maintain aspect ratio */
+  background-color: rgba(191, 160, 70, 0.95); /* Your primary accent color, slightly transparent */
+  color: #fffdfa; /* Off-white for contrast */
+  border-radius: 50%; /* Circular buttons */
+  border: 1px solid rgba(255, 255, 255, 0.2); /* Soft white border for depth */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.8em; /* Larger arrow for readability */
+  font-weight: 500; /* Medium font weight for elegance */
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2), 0 0 0 1px rgba(255, 255, 255, 0.1) inset; /* More prominent, layered shadow */
+  cursor: pointer;
+  z-index: 100; /* Increased z-index to ensure it's always on top of page indicator */
+  transition: all 0.25s ease-in-out; /* Smooth transition for hover/active states */
+  opacity: 0.9; /* Slightly less opaque initially */
+  pointer-events: auto; /* Make them clickable by default */
+  /* Resetting potentially inherited properties from old wide zone */
+  top: auto;
+  left: auto;
+  right: auto;
+  bottom: auto;
+}
+
+/* Class to hide/show buttons with transition */
+.page-click-zone.hidden {
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s ease; /* Smooth transition for hiding/showing */
+}
+
+
+.page-click-zone:hover {
+  background-color: #bfa046; /* Full primary color on hover */
+  transform: translateY(-2px) scale(1.05); /* Lifts and slightly enlarges */
+  box-shadow: 0 6px 12px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(255, 255, 255, 0.2) inset;
+  opacity: 1; /* Fully opaque on hover */
+}
+
+.page-click-zone:active {
+  background-color: #a08c3a; /* Darker accent on click */
+  transform: translateY(0) scale(0.98); /* Depresses button */
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15), 0 1px 1px rgba(0, 0, 0, 0.1) inset;
+}
+
+/*
+  The element with class .next-page-zone (created on the LEFT PAGE by JS)
+  is styled as the NEXT button.
+  Positioned at the bottom-right of the left page.
+*/
+.left-page .next-page-zone {
+  bottom: 60px; /* Moved up to clear the page indicator */
+  right: 25px;
+}
+.left-page .next-page-zone::before {
+  content: "→"; /* Right arrow */
+  line-height: 1; /* Ensure arrow is centered */
+}
+
+/*
+  The element with class .prev-page-zone (created on the RIGHT PAGE by JS)
+  is styled as the PREVIOUS button.
+  Positioned at the bottom-left of the right page.
+*/
+.right-page .prev-page-zone {
+  bottom: 60px; /* Moved up to clear the page indicator */
+  left: 25px;
+}
+.right-page .prev-page-zone::before {
+  content: "←"; /* Left arrow */
+  line-height: 1; /* Ensure arrow is centered */
+}
+
+
+/* Content styling (apply to elements *inside* the wrapper) */
+.page-content-wrapper h1, .page-content-wrapper h2, .page-content-wrapper h3 {
+  font-family: "Playfair Display", serif;
+  color: #bfa046;
+  margin-top: 0;
+  letter-spacing: 1px;
+  text-shadow: 0 1px 0 #fffdfa99;
+}
+.page-content-wrapper img {
+  max-width: 100%;
+  height: auto;
+  box-shadow: 0 2px 12px #bfa04644;
+  border-radius: 8px;
+}
+
+/* Page Indicator */
+.book-indicator {
+  position: absolute;
+  bottom: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-family: "Montserrat", sans-serif;
+  color: #5a4b1d;
+  font-size: 1em;
+  font-weight: 700;
+  letter-spacing: 1px;
+  background: #fffdfae0;
+  padding: 8px 28px;
+  border-radius: 16px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.15), 0 0 0 1px #e0c68a;
+  z-index: 10; /* Lowered z-index to ensure it's below page turn buttons */
+  border: none;
+  opacity: 0; /* Initially hidden */
+  pointer-events: none; /* Not interactive when hidden */
+  transition: opacity 0.5s ease-out; /* Smooth transition for visibility */
+}
+
+/* Class to make indicator visible */
+.book-indicator.visible {
+    opacity: 1; /* Visible when book is opened */
+    pointer-events: auto; /* Interactive when visible */
+}
+
+/* Media Queries */
+@media (max-width: 900px) {
+  .book-container, .book-shadow {
+    width: 98vw;
+    max-width: 98vw;
+    height: 80vh;
+  }
+  .book {
+    width: 100%;
+    height: 100%;
+  }
+  .page-content-wrapper { /* Adjust padding for smaller screens */
+    padding: 3vw 2vw 10vw 2vw; /* Adjusted bottom padding for smaller screens */
+    font-size: 1em;
+  }
+  /* Adjust button size and position for smaller screens if needed */
+  .page-click-zone {
+    width: 48px; /* Slightly smaller for tablets */
+    height: 48px;
+    font-size: 1.6em;
+  }
+  .left-page .next-page-zone, .right-page .prev-page-zone {
+    bottom: 50px; /* Adjusted for smaller screens */
+  }
+  .left-page .next-page-zone { right: 20px; }
+  .right-page .prev-page-zone { left: 20px; }
+}
+@media (max-width: 600px) {
+  .book-container, .book-shadow {
+    width: 100vw;
+    max-width: 100vw;
+    height: 98vw;
+    min-height: 0;
+  }
+  .book {
+    width: 100%;
+    height: 100%;
+  }
+  .page-content-wrapper { /* Adjust padding for smaller screens */
+    padding: 2vw 1vw 8vw 1vw; /* Adjusted bottom padding for smaller screens */
+    font-size: 0.96em;
+  }
+  /* Further adjust button size for very small screens */
+  .page-click-zone {
+    width: 44px; /* Further reduced for smaller mobile screens */
+    height: 44px;
+    font-size: 1.4em;
+  }
+  .left-page .next-page-zone, .right-page .prev-page-zone {
+    bottom: 40px; /* Adjusted for smaller screens */
+  }
+  .left-page .next-page-zone { right: 15px; }
+  .right-page .prev-page-zone { left: 15px; }
+}
+
+/* Page Flip Animation */
+.book-page.flipping-left {
+  transform: rotateY(-30deg) scale(0.98);
+  box-shadow: -32px 0 64px #bfa04644;
+  z-index: 10; /* Ensure flipping page is above buttons if necessary, though buttons are high */
+}
+.book-page.flipping-right {
+  transform: rotateY(30deg) scale(0.98);
+  box-shadow: 32px 0 64px #bfa04644;
+  z-index: 10;
+}
+
+/* Book Cover Styles */
+.book-cover {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(135deg, #a08c3a 0%, #d8bf76 100%);
+  border-radius: 24px;
+  display: flex;
+  flex-direction: column; /* Changed to column to stack elements */
+  align-items: center;
+  justify-content: center;
+  color: #fffdfa;
+  font-family: "Playfair Display", serif;
+  font-weight: 700;
+  /* Removed font-size from here as we're styling individual elements */
+  text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+  box-shadow:
+    0 16px 64px 0 rgba(44, 62, 80, 0.25),
+    0 0 0 2px #a08c3a,
+    -8px 0 15px rgba(0,0,0,0.4) inset;
+  z-index: 15;
+  transform-origin: left;
+  transition: transform 1s cubic-bezier(0.645, 0.045, 0.355, 1), box-shadow 0.5s;
+  cursor: pointer;
+  will-change: transform, box-shadow;
+}
+
+.book-cover::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: url('https://www.transparenttextures.com/patterns/carbon-fibre.png') repeat;
+  opacity: 0.1;
+  border-radius: inherit;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.book-cover::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 10px;
+  height: 100%;
+  background: linear-gradient(to left, rgba(0,0,0,0.3) 0%, rgba(0,0,0,0) 100%);
+  border-radius: 0 24px 24px 0;
+  pointer-events: none;
+  z-index: 16;
+  opacity: 0;
+  transition: opacity 0.5s ease-in-out;
+}
+
+.book-cover:not(.open)::after {
+    opacity: 1;
+}
+
+/* Custom styles for your name and section */
+.book-cover .cover-title-group {
+  position: absolute; /* Position the group within the cover */
+  top: 50%; /* Center vertically */
+  left: 50%; /* Center horizontally */
+  transform: translate(-50%, -50%); /* Adjust for true centering */
+  text-align: center;
+  width: 90%; /* Ensure it doesn't spill over */
+  pointer-events: none; /* Make sure this group itself isn't blocking clicks */
+}
+
+.book-cover .cover-author {
+  font-family: "Playfair Display", serif; /* Elegant serif font */
+  font-size: 3.2em; /* Significantly larger for the name */
+  font-weight: 700; /* Bold */
+  color: #fffdfa; /* Off-white for high contrast */
+  margin: 0; /* Remove default paragraph margins */
+  text-shadow: 4px 4px 8px rgba(0, 0, 0, 0.5); /* Deep, noticeable shadow */
+  letter-spacing: 3px; /* More spaced out letters */
+  line-height: 1.2;
+}
+
+.book-cover .cover-section {
+  font-family: "Montserrat", sans-serif; /* Clean sans-serif font */
+  font-size: 1.5em; /* Larger and clear for the section */
+  font-weight: 500; /* Medium weight */
+  color: rgba(255, 253, 250, 0.9); /* Slightly less transparent white */
+  margin-top: 15px; /* More space from the name */
+  text-shadow: 2px 2px 5px rgba(0, 0, 0, 0.4); /* Clear shadow */
+  letter-spacing: 2px;
+}
+
+/* Ensure the open-indicator is visible and styled properly */
+.open-indicator {
+  position: absolute;
+  bottom: 20px;
+  font-family: "Montserrat", sans-serif;
+  font-size: 0.8em; /* Slightly larger for readability */
+  color: rgba(255, 253, 250, 0.9); /* More opaque */
+  animation: pulse 1.5s infinite ease-in-out;
+  pointer-events: none; /* Crucial: make sure this doesn't block the cover click */
+  text-shadow: 1px 1px 2px rgba(0,0,0,0.3); /* Add a subtle shadow */
+}
+
+@keyframes pulse {
+  0% { transform: scale(1); opacity: 0.7; }
+  50% { transform: scale(1.05); opacity: 1; }
+  100% { transform: scale(1); opacity: 0.7; }
+}
+
+.book-cover.open {
+  transform: rotateY(-180deg);
+  box-shadow:
+    -16px 0 64px 0 rgba(44, 62, 80, 0.25),
+    0 0 0 2px #a08c3a;
+}
+
+.book-cover.open::after {
+  opacity: 0;
+}der of the book when the page loads (before opening)
+    renderBook();
+});

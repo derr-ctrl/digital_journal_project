@@ -254,7 +254,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-
     // Initial render of the book when the page loads (before opening)
     renderBook();
 });
